@@ -442,7 +442,9 @@ extern "C"
 
     typedef struct LCD_LM6063DCW_A_Instance
     {
-        SPI_t SPI;
+        LCD_LM6063DCW_A_t LM6063DCW_A; // FIXME
+
+        SPI_t SPIx;
         GPIO_t ChipSelect;
         GPIO_t RegisterSelect;
         GPIO_t Reset;
