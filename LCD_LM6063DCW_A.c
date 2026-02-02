@@ -586,6 +586,19 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Initialize( LCD_LM6063D
 
         // TODO GPIOs Configuration
 
+        GPIO_Status_t GPIO_Status = GPIO_Status_Success;
+        if ( ( GPIO_Status = GPIO_Write( Instance->PowerEnable, GPIO_Value_High ) ) != GPIO_Status_Success )
+        {
+            Status = LCD_LM6063DCW_A_Status_Error;
+            break;
+        }
+
+        if ( ( GPIO_Status = GPIO_Write( Instance->BacklightEnable, GPIO_Value_Low ) ) != GPIO_Status_Success )
+        {
+            Status = LCD_LM6063DCW_A_Status_Error;
+            break;
+        }
+
         SPI_Status_t SPI_Status = SPI_Status_Success;
         if ( ( SPI_Status = SPI_SetCallbackOnComplete( Instance->SPIx, SPI_CallbackOnComplete ) ) != SPI_Status_Success )
         {
@@ -3345,7 +3358,7 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP( LCD_LM6063DCW_A_Instance_t * Insta
 // #### Public Variable(s) #####################################################
 // #############################################################################
 
-const char LCD_LM6063DCW_A_VERSION[] = "0.0.0.v20260124-1234";
+const char LCD_LM6063DCW_A_VERSION[] = "0.0.0.v20260202-1914";
 
 // #############################################################################
 // #### File Guard #############################################################

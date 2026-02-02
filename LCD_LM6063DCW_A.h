@@ -448,6 +448,8 @@ extern "C"
         GPIO_t ChipSelect;
         GPIO_t RegisterSelect;
         GPIO_t Reset;
+        GPIO_t PowerEnable;
+        GPIO_t BacklightEnable;
 
         // Managed internally !
         LCD_LM6063DCW_A_Instance_Context_t * Context;
