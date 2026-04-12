@@ -438,7 +438,7 @@ extern "C"
 
     typedef LCD_LM6063DCW_A_Pixel_t LCD_LM6063DCW_A_Screen_t[ LCD_LM6063DCW_A_HEIGHT ][ LCD_LM6063DCW_A_WIDTH ];
 
-    typedef struct LCD_LM6063DCW_A_Instance_Context LCD_LM6063DCW_A_Instance_Context_t;
+    typedef struct LCD_LM6063DCW_A_InstanceContext LCD_LM6063DCW_A_InstanceContext_t;
 
     typedef struct LCD_LM6063DCW_A_Instance
     {
@@ -452,7 +452,7 @@ extern "C"
         GPIO_t BacklightEnable;
 
         // Managed internally !
-        LCD_LM6063DCW_A_Instance_Context_t * Context;
+        LCD_LM6063DCW_A_InstanceContext_t * Context;
     } LCD_LM6063DCW_A_Instance_t;
 
     // #############################################################################
