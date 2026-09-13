@@ -396,7 +396,7 @@ typedef struct LCD_LM6063DCW_A_Context
 // #### Private Method(s) Prototype ############################################
 // #############################################################################
 
-static SPI_Status_t SPI_CallbackOnComplete( SPI_t SPIx, SPI_Status_t Status );
+static SPI_Status_t SPI_CallbackOnComplete( SPI_t SPIx, SPI_Status_t SPI_Status, SPI_CallbackContext_t * SPI_CallbackContext );
 
 static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Context_Initialize( void );
 static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Context_Cycle( void );
@@ -472,35 +472,27 @@ static LCD_LM6063DCW_A_Context_t LCD_LM6063DCW_A_Context;
 // #### Private Method(s) ######################################################
 // #############################################################################
 
-static SPI_Status_t SPI_CallbackOnComplete( SPI_t SPIx, SPI_Status_t Status )
+static SPI_Status_t SPI_CallbackOnComplete( SPI_t SPIx, SPI_Status_t SPI_Status, SPI_CallbackContext_t * SPI_CallbackContext )
 {
-    SPI_Status_t SPI_Status = SPI_Status_Success;
+    SPI_Status_t Status = SPI_Status_Success;
+    LCD_LM6063DCW_A_Instance_t * Instance = ( LCD_LM6063DCW_A_Instance_t * ) SPI_CallbackContext;
 
     do
     {
-        LCD_Debug( "%s( SPIx=%d, Status=%p )", __FUNCTION__, SPIx, Status );
+        LCD_Debug( "%s( SPIx=%d, SPI_Status=%d, SPI_CallbackContext=%p )", __FUNCTION__, SPIx, SPI_Status, SPI_CallbackContext );
 
-        // FIXME Enhance the following
-        LCD_LM6063DCW_A_InstanceContext_t * Context = NULL;
-        for ( LCD_LM6063DCW_A_t LCD_LM6063DCW_A_x = LCD_LM6063DCW_A_1; LCD_LM6063DCW_A_x < LCD_LM6063DCW_A_Count; ++LCD_LM6063DCW_A_x )
+        if ( Instance == NULL
+             || Instance->SPIx != SPIx )
         {
-            Context = &LCD_LM6063DCW_A_Context.Context[ LCD_LM6063DCW_A_x ];
-            if ( Context->Instance->SPIx == SPIx )
-            {
-                break;
-            }
-
-            Context = NULL;
-        }
-        if ( Context == NULL )
-        {
+            Status = SPI_Status_Error;
             break;
         }
 
+        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
         LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
-        switch ( Status )
+        switch ( SPI_Status )
         {
             case SPI_Status_Success:
                 Context->Event |= LCD_LM6063DCW_A_Event_SPI_Success;
@@ -512,15 +504,15 @@ static SPI_Status_t SPI_CallbackOnComplete( SPI_t SPIx, SPI_Status_t Status )
         }
 
         GPIO_Status_t GPIO_Status = GPIO_Status_Success;
-        if ( ( GPIO_Status = GPIO_Write( Context->Instance->ChipSelect, GPIO_Value_High ) ) != GPIO_Status_Success )
+        if ( ( GPIO_Status = GPIO_Write( Instance->ChipSelect, GPIO_Value_High ) ) != GPIO_Status_Success )
         {
-            Status = LCD_LM6063DCW_A_Status_Error;
+            Status = SPI_Status_Error;
             break;
         }
     }
     while ( 0 );
 
-    return SPI_Status;
+    return Status;
 }
 
 static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Context_Initialize( void )
@@ -600,7 +592,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Initialize( LCD_LM6063D
         }
 
         SPI_Status_t SPI_Status = SPI_Status_Success;
-        if ( ( SPI_Status = SPI_SetCallbackOnComplete( Instance->SPIx, SPI_CallbackOnComplete ) ) != SPI_Status_Success )
+        if ( ( SPI_Status = SPI_SetOnComplete( Instance->SPIx, ( SPI_OnComplete_t ) { SPI_CallbackOnComplete, Instance } ) ) != SPI_Status_Success )
         {
             Status = LCD_LM6063DCW_A_Status_Error;
             break;
@@ -3358,7 +3350,7 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP( LCD_LM6063DCW_A_Instance_t * Insta
 // #### Public Variable(s) #####################################################
 // #############################################################################
 
-const char LCD_LM6063DCW_A_VERSION[] = "0.0.0.v20260412-1852";
+const char LCD_LM6063DCW_A_VERSION[] = "0.0.0.v20260913-1832";
 
 // #############################################################################
 // #### File Guard #############################################################
