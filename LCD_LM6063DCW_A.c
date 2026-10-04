@@ -58,6 +58,10 @@
 // #### Private Macro(s) #######################################################
 // #############################################################################
 
+// FIXME Captured events should be cleared just after capturing it
+//       But as for some operations depend on it it must be maintained
+#define EVENT_CLEAR_WORKAROUND 1
+
 // #############################################################################
 // #### Private Type(s) ########################################################
 // #############################################################################
@@ -283,7 +287,7 @@ typedef enum LCD_LM6063DCW_A_OperationType
 /**
  * @brief LCD LM6063DCW_A Operation Handler
  */
-typedef LCD_LM6063DCW_A_Status_t ( *LCD_LM6063DCW_A_OperationHandler_t )( LCD_LM6063DCW_A_Instance_t * Instance );
+typedef LCD_LM6063DCW_A_Status_t ( *LCD_LM6063DCW_A_OperationHandler_t )( LCD_LM6063DCW_A_t LCDx );
 
 /**
  * @brief LCD LM6063DCW_A Operation Context
@@ -337,7 +341,7 @@ typedef enum ProcessType
 /**
  * @brief LCD LM6063DCW_A Process Handler
  */
-typedef LCD_LM6063DCW_A_Status_t ( *LCD_LM6063DCW_A_Process_Handler_t )( LCD_LM6063DCW_A_Instance_t * Instance );
+typedef LCD_LM6063DCW_A_Status_t ( *LCD_LM6063DCW_A_Process_Handler_t )( LCD_LM6063DCW_A_t LCDx );
 
 /**
  * @brief LCD LM6063DCW_A Process Context
@@ -374,9 +378,15 @@ typedef enum LCD_LM6063DCW_A_Event
     LCD_LM6063DCW_A_Event_SPI_Error = UTIL_BIT( 2 ),
 } LCD_LM6063DCW_A_Event_t;
 
-typedef struct LCD_LM6063DCW_A_InstanceContext
+typedef struct LCD_LM6063DCW_A_Instance
 {
-    LCD_LM6063DCW_A_Instance_t * Instance; // Owner Instance
+    SPI_t SPIx;
+
+    GPIO_t ChipSelect;
+    GPIO_t RegisterSelect;
+    GPIO_t Reset;
+    GPIO_t BacklightEnable;
+    GPIO_t PowerEnable;
 
     LCD_LM6063DCW_A_Event_t Event;
 
@@ -384,12 +394,12 @@ typedef struct LCD_LM6063DCW_A_InstanceContext
 
     LCD_LM6063DCW_A_SEG_Direction_t SEG_Direction;
     LCD_LM6063DCW_A_Screen_t Screen;
-} LCD_LM6063DCW_A_InstanceContext_t;
+} LCD_LM6063DCW_A_Instance_t;
 
 typedef struct LCD_LM6063DCW_A_Context
 {
     TIM_Timestamp_t Timestamp;
-    LCD_LM6063DCW_A_InstanceContext_t Context[ LCD_LM6063DCW_A_Count ];
+    LCD_LM6063DCW_A_Instance_t Instance[ LCD_LM6063DCW_A_Count ];
 } LCD_LM6063DCW_A_Context_t;
 
 // #############################################################################
@@ -402,65 +412,65 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Context_Initialize( void );
 static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Context_Cycle( void );
 static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Context_DeInitialize( void );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Initialize( LCD_LM6063DCW_A_Instance_t * Instance );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Cycle( LCD_LM6063DCW_A_Instance_t * Instance );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_DeInitialize( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Initialize( LCD_LM6063DCW_A_t LCDx );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Cycle( LCD_LM6063DCW_A_t LCDx );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_DeInitialize( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetProcess( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_ProcessType_t ProcessType );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetProcess( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_ProcessType_t ProcessType );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Execute( LCD_LM6063DCW_A_Instance_t * Instance, uint8_t * buffer, uint32_t length );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Transfer( LCD_LM6063DCW_A_Instance_t * Instance, uint8_t * buffer, uint32_t length );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Execute( LCD_LM6063DCW_A_t LCDx, uint8_t * buffer, uint32_t length );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Transfer( LCD_LM6063DCW_A_t LCDx, uint8_t * buffer, uint32_t length );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessInitialize( LCD_LM6063DCW_A_Instance_t * Instance );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessFlush( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessInitialize( LCD_LM6063DCW_A_t LCDx );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessFlush( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOffExecute( LCD_LM6063DCW_A_Instance_t * Instance );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOffResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOffExecute( LCD_LM6063DCW_A_t LCDx );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOffResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOnExecute( LCD_LM6063DCW_A_Instance_t * Instance );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOnResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOnExecute( LCD_LM6063DCW_A_t LCDx );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOnResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayOnExecute( LCD_LM6063DCW_A_Instance_t * Instance );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayOnResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayOnExecute( LCD_LM6063DCW_A_t LCDx );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayOnResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationLineExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Line_t Line );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationLineResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationLineExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Line_t Line );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationLineResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_SEG_DirectionExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_SEG_Direction_t SEG_Direction );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_SEG_DirectionResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_SEG_DirectionExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_SEG_Direction_t SEG_Direction );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_SEG_DirectionResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayDirectionExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_DisplayDirection_t DisplayDirection );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayDirectionResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayDirectionExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_DisplayDirection_t DisplayDirection );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayDirectionResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPixelsOffExecute( LCD_LM6063DCW_A_Instance_t * Instance );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPixelsOffResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPixelsOffExecute( LCD_LM6063DCW_A_t LCDx );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPixelsOffResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBiasExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Bias_t Bias );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBiasResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBiasExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Bias_t Bias );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBiasResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_COM_DirectionExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_COM_Direction_t COM_Direction );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_COM_DirectionResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_COM_DirectionExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_COM_Direction_t COM_Direction );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_COM_DirectionResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_PowerBooster_t PowerBooster, LCD_LM6063DCW_A_PowerRegulator_t PowerRegulator, LCD_LM6063DCW_A_PowerFollower_t PowerFollower );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_PowerBooster_t PowerBooster, LCD_LM6063DCW_A_PowerRegulator_t PowerRegulator, LCD_LM6063DCW_A_PowerFollower_t PowerFollower );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationRegulationRatioExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_RegulationRatio_t RegulationRatio );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationRegulationRatioResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationRegulationRatioExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_RegulationRatio_t RegulationRatio );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationRegulationRatioResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBoosterLevelExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_BoosterLevel_t BoosterLevel );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBoosterLevelResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBoosterLevelExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_BoosterLevel_t BoosterLevel );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBoosterLevelResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationElectronicVolumeExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_ElectronicVolume_t ElectronicVolume );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationElectronicVolumeResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationElectronicVolumeExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_ElectronicVolume_t ElectronicVolume );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationElectronicVolumeResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPageExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Page_t Page );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPageResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPageExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Page_t Page );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPageResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Column_t Column );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Column_t Column );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnResolve( LCD_LM6063DCW_A_t LCDx );
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Page_t Page );
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushResolve( LCD_LM6063DCW_A_Instance_t * Instance );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Page_t Page );
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushResolve( LCD_LM6063DCW_A_t LCDx );
 
 // #############################################################################
 // #### Private Variable(s) ####################################################
@@ -475,31 +485,23 @@ static LCD_LM6063DCW_A_Context_t LCD_LM6063DCW_A_Context;
 static SPI_Status_t SPI_CallbackOnComplete( SPI_t SPIx, SPI_Status_t SPI_Status, SPI_CallbackContext_t * SPI_CallbackContext )
 {
     SPI_Status_t Status = SPI_Status_Success;
-    LCD_LM6063DCW_A_Instance_t * Instance = ( LCD_LM6063DCW_A_Instance_t * ) SPI_CallbackContext;
 
     do
     {
         LCD_Debug( "%s( SPIx=%d, SPI_Status=%d, SPI_CallbackContext=%p )", __FUNCTION__, SPIx, SPI_Status, SPI_CallbackContext );
 
-        if ( Instance == NULL
-             || Instance->SPIx != SPIx )
-        {
-            Status = SPI_Status_Error;
-            break;
-        }
-
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = ( LCD_LM6063DCW_A_Instance_t * ) SPI_CallbackContext;
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         switch ( SPI_Status )
         {
             case SPI_Status_Success:
-                Context->Event |= LCD_LM6063DCW_A_Event_SPI_Success;
+                Instance->Event |= LCD_LM6063DCW_A_Event_SPI_Success;
                 break;
 
             default:
-                Context->Event |= LCD_LM6063DCW_A_Event_SPI_Error;
+                Instance->Event |= LCD_LM6063DCW_A_Event_SPI_Error;
                 break;
         }
 
@@ -568,13 +570,15 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Context_DeInitialize( void )
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Initialize( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Initialize( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
+
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
 
         // TODO GPIOs Configuration
 
@@ -598,77 +602,79 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Initialize( LCD_LM6063D
             break;
         }
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
+        Instance->Event = LCD_LM6063DCW_A_Event_None;
 
-        Context->Event = LCD_LM6063DCW_A_Event_None;
+        Instance->SEG_Direction = LCD_LM6063DCW_A_SEG_Direction_Reverse;
+        UTIL_MemorySetZero( Instance->Screen, UTIL_SizeOf( Instance->Screen ) );
 
-        Context->SEG_Direction = LCD_LM6063DCW_A_SEG_Direction_Reverse;
-        UTIL_MemorySetZero( Context->Screen, UTIL_SizeOf( Context->Screen ) );
-
-        Context->Instance = Instance;
-
-        Instance->Context = Context;
-
-        Status = LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_Initialize );
+        Status = LCD_LM6063DCW_A_SetProcess( LCDx, LCD_LM6063DCW_A_ProcessType_Initialize );
     }
     while ( 0 );
 
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Cycle( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Cycle( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
-        LCD_LM6063DCW_A_Event_t Event = Context->Event; // CAUTION: Has to copy events occurred at the early start of the cycle, so as to be cleared at the end of the cycle,
-                                                        //          which let events occurs after that for the next cycle call
-
+        LCD_LM6063DCW_A_Event_t Event = Instance->Event; // CAUTION: Has to copy events occurred at the early start of the cycle, so as to be cleared at the end of the cycle,
+                                                         //          which let events occurs after that for the next cycle call
+#if !EVENT_CLEAR_WORKAROUND                              //
+        Instance->Event &= ~Event;                       //          Clear captured events
+#endif
         if ( Operation->Handler != NULL )
         {
-            LCD_LM6063DCW_A_Status_t LM6063DCW_A_Status = LCD_LM6063DCW_A_Status_Error;
-            if ( ( LM6063DCW_A_Status = Operation->Handler( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
+            if ( ( Status = Operation->Handler( LCDx ) ) != LCD_LM6063DCW_A_Status_Success )
             {
-                Status = LM6063DCW_A_Status;
                 // FIXME Operation reported non success status, is there any action ?
             }
         }
 
         if ( Process->Handler != NULL )
         {
-            LCD_LM6063DCW_A_Status_t LM6063DCW_A_Status = LCD_LM6063DCW_A_Status_Error;
-            if ( ( LM6063DCW_A_Status = Process->Handler( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
+            if ( ( Status = Process->Handler( LCDx ) ) != LCD_LM6063DCW_A_Status_Success )
             {
-                Status = LM6063DCW_A_Status;
                 // FIXME Process reported non success status, is there any action ?
             }
         }
 
+#if EVENT_CLEAR_WORKAROUND
+        Instance->Event &= ~Event;
+#endif
+
         if ( ( Event & LCD_LM6063DCW_A_Event_Timeout ) == LCD_LM6063DCW_A_Event_Timeout )
         {
-            Context->Event &= ~LCD_LM6063DCW_A_Event_Timeout;
-            LCD_Trace( "Timeout: Instance=%p, LM6063DCW_A=%d", Instance, Instance->LM6063DCW_A );
+            Event &= ~LCD_LM6063DCW_A_Event_Timeout;
+            LCD_Trace( "Timeout: LCDx=%d, LM6063DCW_A=%d", Instance, Instance->LM6063DCW_A );
             // TODO Invoke Callback
         }
 
         if ( ( Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
-            Context->Event &= ~LCD_LM6063DCW_A_Event_SPI_Success;
-            LCD_Debug( "SPI Success: Instance=%p, LM6063DCW_A=%d", Instance, Instance->LM6063DCW_A );
+            Event &= ~LCD_LM6063DCW_A_Event_SPI_Success;
+            LCD_Debug( "SPI Success: LCDx=%d, LM6063DCW_A=%d", Instance, Instance->LM6063DCW_A );
             // TODO Invoke Callback
         }
 
         if ( ( Event & LCD_LM6063DCW_A_Event_SPI_Error ) == LCD_LM6063DCW_A_Event_SPI_Error )
         {
-            Context->Event &= ~LCD_LM6063DCW_A_Event_SPI_Error;
-            LCD_Debug( "SPI Error: Instance=%p, LM6063DCW_A=%d", Instance, Instance->LM6063DCW_A );
+            Event &= ~LCD_LM6063DCW_A_Event_SPI_Error;
+            LCD_Debug( "SPI Error: LCDx=%d, LM6063DCW_A=%d", Instance, Instance->LM6063DCW_A );
             // TODO Invoke Callback
+        }
+
+        if ( Event )
+        {
+            LCD_Warning( "Not handled events %X: LCDx=%d", Event, LCDx );
         }
     }
     while ( 0 );
@@ -676,28 +682,30 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_Cycle( LCD_LM6063DCW_A_
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_DeInitialize( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Instance_DeInitialize( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
     }
     while ( 0 );
 
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetProcess( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_ProcessType_t ProcessType )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetProcess( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_ProcessType_t ProcessType )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
+
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Process->Type = ProcessType;
@@ -744,77 +752,89 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetProcess( LCD_LM6063DCW_A_Inst
         }
     }
     while ( 0 );
+
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Execute( LCD_LM6063DCW_A_Instance_t * Instance, uint8_t * buffer, uint32_t length )
-{
-    LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
-    do
-    {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
-        GPIO_Status_t GPIO_Status = GPIO_Status_Error;
-        if ( ( GPIO_Status = GPIO_Write( Instance->RegisterSelect, GPIO_Value_Low ) ) != GPIO_Status_Success )
-        {
-            Status = LCD_LM6063DCW_A_Status_Error;
-            break;
-        }
-        SPI_Status_t SPI_Status = SPI_Status_Error;
-        if ( ( GPIO_Status = GPIO_Write( Instance->ChipSelect, GPIO_Value_Low ) ) != GPIO_Status_Success )
-        {
-            Status = LCD_LM6063DCW_A_Status_Error;
-            break;
-        }
-        if ( ( SPI_Status = SPI_Write( Instance->SPIx, buffer, length ) ) != SPI_Status_Success )
-        {
-            Status = LCD_LM6063DCW_A_Status_Error;
-            break;
-        }
-        Status = LCD_LM6063DCW_A_Status_Success;
-    }
-    while ( 0 );
-    return Status;
-}
-
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Transfer( LCD_LM6063DCW_A_Instance_t * Instance, uint8_t * buffer, uint32_t length )
-{
-    LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
-    do
-    {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
-        GPIO_Status_t GPIO_Status = GPIO_Status_Error;
-        if ( ( GPIO_Status = GPIO_Write( Instance->RegisterSelect, GPIO_Value_High ) ) != GPIO_Status_Success )
-        {
-            Status = LCD_LM6063DCW_A_Status_Error;
-            break;
-        }
-        SPI_Status_t SPI_Status = SPI_Status_Error;
-        if ( ( GPIO_Status = GPIO_Write( Instance->ChipSelect, GPIO_Value_Low ) ) != GPIO_Status_Success )
-        {
-            Status = LCD_LM6063DCW_A_Status_Error;
-            break;
-        }
-        if ( ( SPI_Status = SPI_Write( Instance->SPIx, buffer, length ) ) != SPI_Status_Success )
-        {
-            Status = LCD_LM6063DCW_A_Status_Error;
-            break;
-        }
-        Status = LCD_LM6063DCW_A_Status_Success;
-    }
-    while ( 0 );
-    return Status;
-}
-
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessInitialize( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Execute( LCD_LM6063DCW_A_t LCDx, uint8_t * buffer, uint32_t length )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+
+        GPIO_Status_t GPIO_Status = GPIO_Status_Success;
+        if ( ( GPIO_Status = GPIO_Write( Instance->RegisterSelect, GPIO_Value_Low ) ) != GPIO_Status_Success )
+        {
+            Status = LCD_LM6063DCW_A_Status_Error;
+            break;
+        }
+        SPI_Status_t SPI_Status = SPI_Status_Success;
+        if ( ( GPIO_Status = GPIO_Write( Instance->ChipSelect, GPIO_Value_Low ) ) != GPIO_Status_Success )
+        {
+            Status = LCD_LM6063DCW_A_Status_Error;
+            break;
+        }
+        if ( ( SPI_Status = SPI_Write( Instance->SPIx, buffer, length ) ) != SPI_Status_Success )
+        {
+            Status = LCD_LM6063DCW_A_Status_Error;
+            break;
+        }
+        Status = LCD_LM6063DCW_A_Status_Success;
+    }
+    while ( 0 );
+
+    return Status;
+}
+
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Transfer( LCD_LM6063DCW_A_t LCDx, uint8_t * buffer, uint32_t length )
+{
+    LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
+
+    do
+    {
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
+
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+
+        GPIO_Status_t GPIO_Status = GPIO_Status_Success;
+        if ( ( GPIO_Status = GPIO_Write( Instance->RegisterSelect, GPIO_Value_High ) ) != GPIO_Status_Success )
+        {
+            Status = LCD_LM6063DCW_A_Status_Error;
+            break;
+        }
+        SPI_Status_t SPI_Status = SPI_Status_Success;
+        if ( ( GPIO_Status = GPIO_Write( Instance->ChipSelect, GPIO_Value_Low ) ) != GPIO_Status_Success )
+        {
+            Status = LCD_LM6063DCW_A_Status_Error;
+            break;
+        }
+        if ( ( SPI_Status = SPI_Write( Instance->SPIx, buffer, length ) ) != SPI_Status_Success )
+        {
+            Status = LCD_LM6063DCW_A_Status_Error;
+            break;
+        }
+        Status = LCD_LM6063DCW_A_Status_Success;
+    }
+    while ( 0 );
+
+    return Status;
+}
+
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessInitialize( LCD_LM6063DCW_A_t LCDx )
+{
+    LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
+
+    do
+    {
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
+
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Process->Type != LCD_LM6063DCW_A_ProcessType_Initialize )
@@ -838,55 +858,55 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessInitialize( LCD_LM6063DCW
         switch ( Operation->Type )
         {
             case LCD_LM6063DCW_A_OperationType_Pending:
-                Operation->Status = LCD_LM6063DCW_A_OperationPowerOffExecute( Instance );
+                Operation->Status = LCD_LM6063DCW_A_OperationPowerOffExecute( LCDx );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_PowerOff:
-                Operation->Status = LCD_LM6063DCW_A_OperationPowerOnExecute( Instance );
+                Operation->Status = LCD_LM6063DCW_A_OperationPowerOnExecute( LCDx );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_PowerOn:
-                Operation->Status = LCD_LM6063DCW_A_OperationDisplayOnExecute( Instance );
+                Operation->Status = LCD_LM6063DCW_A_OperationDisplayOnExecute( LCDx );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_DisplayOn:
-                Operation->Status = LCD_LM6063DCW_A_OperationLineExecute( Instance, LCD_LM6063DCW_A_Line_0 );
+                Operation->Status = LCD_LM6063DCW_A_OperationLineExecute( LCDx, LCD_LM6063DCW_A_Line_0 );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_Line:
-                Operation->Status = LCD_LM6063DCW_A_Operation_SEG_DirectionExecute( Instance, LCD_LM6063DCW_A_SEG_Direction_Reverse );
+                Operation->Status = LCD_LM6063DCW_A_Operation_SEG_DirectionExecute( LCDx, LCD_LM6063DCW_A_SEG_Direction_Reverse );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_SEG_Direction:
-                Operation->Status = LCD_LM6063DCW_A_OperationDisplayDirectionExecute( Instance, LCD_LM6063DCW_A_DisplayDirection_Normal );
+                Operation->Status = LCD_LM6063DCW_A_OperationDisplayDirectionExecute( LCDx, LCD_LM6063DCW_A_DisplayDirection_Normal );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_DisplayDirection:
-                Operation->Status = LCD_LM6063DCW_A_OperationPixelsOffExecute( Instance );
+                Operation->Status = LCD_LM6063DCW_A_OperationPixelsOffExecute( LCDx );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_PixelsOff:
-                Operation->Status = LCD_LM6063DCW_A_OperationBiasExecute( Instance, LCD_LM6063DCW_A_Bias_1_9 );
+                Operation->Status = LCD_LM6063DCW_A_OperationBiasExecute( LCDx, LCD_LM6063DCW_A_Bias_1_9 );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_Bias:
-                Operation->Status = LCD_LM6063DCW_A_Operation_COM_DirectionExecute( Instance, LCD_LM6063DCW_A_COM_Direction_Normal );
+                Operation->Status = LCD_LM6063DCW_A_Operation_COM_DirectionExecute( LCDx, LCD_LM6063DCW_A_COM_Direction_Normal );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_COM_Direction:
-                Operation->Status = LCD_LM6063DCW_A_OperationPowerExecute( Instance, LCD_LM6063DCW_A_PowerBooster_On, LCD_LM6063DCW_A_PowerRegulator_On, LCD_LM6063DCW_A_PowerFollower_On );
+                Operation->Status = LCD_LM6063DCW_A_OperationPowerExecute( LCDx, LCD_LM6063DCW_A_PowerBooster_On, LCD_LM6063DCW_A_PowerRegulator_On, LCD_LM6063DCW_A_PowerFollower_On );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_Power:
-                Operation->Status = LCD_LM6063DCW_A_OperationRegulationRatioExecute( Instance, LCD_LM6063DCW_A_RegulationRatio_5_5 );
+                Operation->Status = LCD_LM6063DCW_A_OperationRegulationRatioExecute( LCDx, LCD_LM6063DCW_A_RegulationRatio_5_5 );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_RegulationRatio:
-                Operation->Status = LCD_LM6063DCW_A_OperationBoosterLevelExecute( Instance, LCD_LM6063DCW_A_BoosterLevel_X4 );
+                Operation->Status = LCD_LM6063DCW_A_OperationBoosterLevelExecute( LCDx, LCD_LM6063DCW_A_BoosterLevel_X4 );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_BoosterLevel:
-                Operation->Status = LCD_LM6063DCW_A_OperationElectronicVolumeExecute( Instance, LCD_LM6063DCW_A_ElectronicVolume_33 );
+                Operation->Status = LCD_LM6063DCW_A_OperationElectronicVolumeExecute( LCDx, LCD_LM6063DCW_A_ElectronicVolume_33 );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_ElectronicVolume:
@@ -900,11 +920,11 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessInitialize( LCD_LM6063DCW
                 // Successful initialization is followed by flush process
                 if ( Operation->Status != LCD_LM6063DCW_A_Status_Success )
                 {
-                    Status = LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_None );
+                    Status = LCD_LM6063DCW_A_SetProcess( LCDx, LCD_LM6063DCW_A_ProcessType_None );
                     break;
                 }
 
-                Status = LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_Flush );
+                Status = LCD_LM6063DCW_A_SetProcess( LCDx, LCD_LM6063DCW_A_ProcessType_Flush );
                 break;
         }
     }
@@ -913,16 +933,17 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessInitialize( LCD_LM6063DCW
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessFlush( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessFlush( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Process->Type != LCD_LM6063DCW_A_ProcessType_Flush )
@@ -947,25 +968,25 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessFlush( LCD_LM6063DCW_A_In
         {
             case LCD_LM6063DCW_A_OperationType_Pending:
                 Operation->Context.Page = LCD_LM6063DCW_A_Page_0;
-                Operation->Status = LCD_LM6063DCW_A_OperationPageExecute( Instance, Operation->Context.Page );
+                Operation->Status = LCD_LM6063DCW_A_OperationPageExecute( LCDx, Operation->Context.Page );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_Page:
                 // FIX align with the visual pixels
-                switch ( Instance->Context->SEG_Direction )
+                switch ( Instance->SEG_Direction )
                 {
                     case LCD_LM6063DCW_A_SEG_Direction_Normal:
-                        Operation->Status = LCD_LM6063DCW_A_OperationColumnExecute( Instance, LCD_LM6063DCW_A_Column_4 );
+                        Operation->Status = LCD_LM6063DCW_A_OperationColumnExecute( LCDx, LCD_LM6063DCW_A_Column_4 );
                         break;
                     case LCD_LM6063DCW_A_SEG_Direction_Reverse:
                     default:
-                        Operation->Status = LCD_LM6063DCW_A_OperationColumnExecute( Instance, LCD_LM6063DCW_A_Column_0 );
+                        Operation->Status = LCD_LM6063DCW_A_OperationColumnExecute( LCDx, LCD_LM6063DCW_A_Column_0 );
                         break;
                 }
                 break;
 
             case LCD_LM6063DCW_A_OperationType_Column:
-                Operation->Status = LCD_LM6063DCW_A_OperationFlushExecute( Instance, Operation->Context.Page );
+                Operation->Status = LCD_LM6063DCW_A_OperationFlushExecute( LCDx, Operation->Context.Page );
                 break;
 
             case LCD_LM6063DCW_A_OperationType_Flush:
@@ -973,7 +994,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessFlush( LCD_LM6063DCW_A_In
                 {
                     // Start flush again for the next page
                     Operation->Context.Page++;
-                    Operation->Status = LCD_LM6063DCW_A_OperationPageExecute( Instance, Operation->Context.Page );
+                    Operation->Status = LCD_LM6063DCW_A_OperationPageExecute( LCDx, Operation->Context.Page );
                     break;
                 }
 
@@ -986,7 +1007,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessFlush( LCD_LM6063DCW_A_In
                 // {
                 //     Instance->OnComplete( Instance, Operation->Status );
                 // }
-                LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_None );
+                LCD_LM6063DCW_A_SetProcess( LCDx, LCD_LM6063DCW_A_ProcessType_None );
                 break;
         }
     }
@@ -995,16 +1016,17 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessFlush( LCD_LM6063DCW_A_In
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOffExecute( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOffExecute( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         GPIO_Status_t GPIO_Status = GPIO_Status_Success;
@@ -1031,16 +1053,17 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOffExecute( LCD_LM
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOffResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOffResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_PowerOff )
@@ -1063,16 +1086,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOffResolve( LCD_LM
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOnExecute( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOnExecute( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         GPIO_Status_t GPIO_Status = GPIO_Status_Success;
@@ -1099,16 +1122,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOnExecute( LCD_LM6
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOnResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOnResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_PowerOn )
@@ -1131,21 +1154,21 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerOnResolve( LCD_LM6
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayOnExecute( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayOnExecute( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.SetDisplay = ( LCD_LM6063DCW_A_SetDisplay_t ) { { LCD_LM6063DCW_A_Command_SetDisplay } };
         Operation->Context.SetDisplay.State = 1;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.SetDisplay, UTIL_SizeOf( Operation->Context.SetDisplay ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.SetDisplay, UTIL_SizeOf( Operation->Context.SetDisplay ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -1167,16 +1190,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayOnExecute( LCD_L
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayOnResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayOnResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_DisplayOn )
@@ -1194,7 +1217,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayOnResolve( LCD_L
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -1206,21 +1229,21 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayOnResolve( LCD_L
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationLineExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Line_t Line )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationLineExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Line_t Line )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.SetLine = ( LCD_LM6063DCW_A_SetLine_t ) { { LCD_LM6063DCW_A_Command_SetLine } };
         Operation->Context.SetLine.Line = Line;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.SetLine, UTIL_SizeOf( Operation->Context.SetLine ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.SetLine, UTIL_SizeOf( Operation->Context.SetLine ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -1242,16 +1265,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationLineExecute( LCD_LM6063
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationLineResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationLineResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_Line )
@@ -1269,7 +1292,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationLineResolve( LCD_LM6063
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -1281,27 +1304,27 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationLineResolve( LCD_LM6063
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_SEG_DirectionExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_SEG_Direction_t SEG_Direction )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_SEG_DirectionExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_SEG_Direction_t SEG_Direction )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.Set_SEG_Direction = ( LCD_LM6063DCW_A_SetSEG_Direction_t ) { { LCD_LM6063DCW_A_Command_SetSEG_Direction } };
         Operation->Context.Set_SEG_Direction.Direction = SEG_Direction;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.Set_SEG_Direction, UTIL_SizeOf( Operation->Context.Set_SEG_Direction ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.Set_SEG_Direction, UTIL_SizeOf( Operation->Context.Set_SEG_Direction ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
 
         // Update SEG_Direction
-        Instance->Context->SEG_Direction = SEG_Direction;
+        Instance->SEG_Direction = SEG_Direction;
 
         Operation->Type = LCD_LM6063DCW_A_OperationType_SEG_Direction;
         Operation->Handler = LCD_LM6063DCW_A_Operation_SEG_DirectionResolve;
@@ -1320,16 +1343,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_SEG_DirectionExecute( 
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_SEG_DirectionResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_SEG_DirectionResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_SEG_Direction )
@@ -1347,7 +1370,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_SEG_DirectionResolve( 
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -1359,21 +1382,21 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_SEG_DirectionResolve( 
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayDirectionExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_DisplayDirection_t DisplayDirection )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayDirectionExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_DisplayDirection_t DisplayDirection )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.SetDisplayInverse = ( LCD_LM6063DCW_A_SetDisplayInverse_t ) { { LCD_LM6063DCW_A_Command_SetDisplayInverse } };
         Operation->Context.SetDisplayInverse.Inverse = DisplayDirection;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.SetDisplayInverse, UTIL_SizeOf( Operation->Context.SetDisplayInverse ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.SetDisplayInverse, UTIL_SizeOf( Operation->Context.SetDisplayInverse ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -1395,16 +1418,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayDirectionExecute
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayDirectionResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayDirectionResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_DisplayDirection )
@@ -1422,7 +1445,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayDirectionResolve
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -1434,21 +1457,21 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationDisplayDirectionResolve
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPixelsOffExecute( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPixelsOffExecute( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.SetAllPixel = ( LCD_LM6063DCW_A_SetAllPixel_t ) { { LCD_LM6063DCW_A_Command_SetAllPixel } };
         Operation->Context.SetAllPixel.On = 0;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.SetAllPixel, UTIL_SizeOf( Operation->Context.SetAllPixel ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.SetAllPixel, UTIL_SizeOf( Operation->Context.SetAllPixel ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -1470,16 +1493,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPixelsOffExecute( LCD_L
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPixelsOffResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPixelsOffResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_PixelsOff )
@@ -1497,7 +1520,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPixelsOffResolve( LCD_L
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -1509,21 +1532,21 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPixelsOffResolve( LCD_L
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBiasExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Bias_t Bias )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBiasExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Bias_t Bias )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.SetBias = ( LCD_LM6063DCW_A_SetBias_t ) { { LCD_LM6063DCW_A_Command_SetBias } };
         Operation->Context.SetBias.Bias = Bias;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.SetBias, UTIL_SizeOf( Operation->Context.SetBias ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.SetBias, UTIL_SizeOf( Operation->Context.SetBias ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -1545,16 +1568,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBiasExecute( LCD_LM6063
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBiasResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBiasResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_Bias )
@@ -1572,7 +1595,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBiasResolve( LCD_LM6063
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -1584,21 +1607,21 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBiasResolve( LCD_LM6063
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_COM_DirectionExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_COM_Direction_t COM_Direction )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_COM_DirectionExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_COM_Direction_t COM_Direction )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.Set_COM_Direction = ( LCD_LM6063DCW_A_SetCOM_Direction_t ) { { LCD_LM6063DCW_A_Command_SetCOM_Direction } };
         Operation->Context.Set_COM_Direction.Reverse = COM_Direction;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.Set_COM_Direction, UTIL_SizeOf( Operation->Context.Set_COM_Direction ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.Set_COM_Direction, UTIL_SizeOf( Operation->Context.Set_COM_Direction ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -1620,16 +1643,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_COM_DirectionExecute( 
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_COM_DirectionResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_COM_DirectionResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_COM_Direction )
@@ -1647,7 +1670,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_COM_DirectionResolve( 
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -1659,23 +1682,23 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Operation_COM_DirectionResolve( 
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_PowerBooster_t PowerBooster, LCD_LM6063DCW_A_PowerRegulator_t PowerRegulator, LCD_LM6063DCW_A_PowerFollower_t PowerFollower )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_PowerBooster_t PowerBooster, LCD_LM6063DCW_A_PowerRegulator_t PowerRegulator, LCD_LM6063DCW_A_PowerFollower_t PowerFollower )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.SetPowerControl = ( LCD_LM6063DCW_A_SetPowerControl_t ) { { LCD_LM6063DCW_A_Command_SetPowerControl } };
         Operation->Context.SetPowerControl.VB = PowerBooster;
         Operation->Context.SetPowerControl.VR = PowerRegulator;
         Operation->Context.SetPowerControl.VF = PowerFollower;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.SetPowerControl, UTIL_SizeOf( Operation->Context.SetPowerControl ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.SetPowerControl, UTIL_SizeOf( Operation->Context.SetPowerControl ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -1697,16 +1720,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerExecute( LCD_LM606
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_Power )
@@ -1724,7 +1747,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerResolve( LCD_LM606
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -1736,21 +1759,21 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPowerResolve( LCD_LM606
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationRegulationRatioExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_RegulationRatio_t RegulationRatio )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationRegulationRatioExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_RegulationRatio_t RegulationRatio )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.SetRegulation = ( LCD_LM6063DCW_A_SetRegulation_t ) { { LCD_LM6063DCW_A_Command_SetRegulation } };
         Operation->Context.SetRegulation.Ratio = RegulationRatio;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.SetRegulation, UTIL_SizeOf( Operation->Context.SetRegulation ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.SetRegulation, UTIL_SizeOf( Operation->Context.SetRegulation ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -1772,16 +1795,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationRegulationRatioExecute(
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationRegulationRatioResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationRegulationRatioResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_RegulationRatio )
@@ -1799,7 +1822,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationRegulationRatioResolve(
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -1811,23 +1834,23 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationRegulationRatioResolve(
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBoosterLevelExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_BoosterLevel_t BoosterLevel )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBoosterLevelExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_BoosterLevel_t BoosterLevel )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.SetBooster = ( LCD_LM6063DCW_A_SetBooster_t ) {
             { LCD_LM6063DCW_A_Command_SetBooster_1, LCD_LM6063DCW_A_Command_SetBooster_2 }
         };
         Operation->Context.SetBooster.Level = BoosterLevel;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.SetBooster, UTIL_SizeOf( Operation->Context.SetBooster ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.SetBooster, UTIL_SizeOf( Operation->Context.SetBooster ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -1849,16 +1872,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBoosterLevelExecute( LC
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBoosterLevelResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBoosterLevelResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_BoosterLevel )
@@ -1876,7 +1899,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBoosterLevelResolve( LC
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -1888,23 +1911,23 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationBoosterLevelResolve( LC
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationElectronicVolumeExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_ElectronicVolume_t ElectronicVolume )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationElectronicVolumeExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_ElectronicVolume_t ElectronicVolume )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.SetElectronicVolume = ( LCD_LM6063DCW_A_SetElectronicVolume_t ) {
             { LCD_LM6063DCW_A_Command_SetElectronicVolume_1, LCD_LM6063DCW_A_Command_SetElectronicVolume_2 }
         };
         Operation->Context.SetElectronicVolume.Level = ElectronicVolume;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.SetElectronicVolume, UTIL_SizeOf( Operation->Context.SetElectronicVolume ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.SetElectronicVolume, UTIL_SizeOf( Operation->Context.SetElectronicVolume ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -1926,16 +1949,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationElectronicVolumeExecute
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationElectronicVolumeResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationElectronicVolumeResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_ElectronicVolume )
@@ -1953,7 +1976,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationElectronicVolumeResolve
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -1965,21 +1988,21 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationElectronicVolumeResolve
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPageExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Page_t Page )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPageExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Page_t Page )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.SetPage = ( LCD_LM6063DCW_A_SetPage_t ) { { LCD_LM6063DCW_A_Command_SetPage } };
         Operation->Context.SetPage.Page = Page;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.SetPage, UTIL_SizeOf( Operation->Context.SetPage ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.SetPage, UTIL_SizeOf( Operation->Context.SetPage ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -2001,16 +2024,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPageExecute( LCD_LM6063
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPageResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPageResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_Page )
@@ -2028,7 +2051,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPageResolve( LCD_LM6063
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -2040,16 +2063,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationPageResolve( LCD_LM6063
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Column_t Column )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Column_t Column )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         Operation->Context.SetColumn = ( LCD_LM6063DCW_A_SetColumn_t ) {
@@ -2057,7 +2080,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnExecute( LCD_LM60
         };
         Operation->Context.SetColumn.ColumnMSB = ( Column & 0xF0 ) >> 4;
         Operation->Context.SetColumn.ColumnLSB = ( Column & 0x0F ) >> 0;
-        if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &Operation->Context.SetColumn, UTIL_SizeOf( Operation->Context.SetColumn ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Execute( LCDx, ( uint8_t * ) &Operation->Context.SetColumn, UTIL_SizeOf( Operation->Context.SetColumn ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -2079,16 +2102,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnExecute( LCD_LM60
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_Column )
@@ -2106,7 +2129,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnResolve( LCD_LM60
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -2118,16 +2141,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationColumnResolve( LCD_LM60
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushExecute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Page_t Page )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushExecute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Page_t Page )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         for ( uint32_t column = 0; column < LCD_LM6063DCW_A_WIDTH; ++column )
@@ -2135,11 +2158,11 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushExecute( LCD_LM606
             Operation->Context.ScreenPage[ column ] = 0x00;
             for ( uint32_t line = 0; line < 8; ++line )
             {
-                Operation->Context.ScreenPage[ column ] |= Context->Screen[ Page * 8 + line ][ column ] << line;
+                Operation->Context.ScreenPage[ column ] |= Instance->Screen[ Page * 8 + line ][ column ] << line;
             }
         }
 
-        if ( ( Status = LCD_LM6063DCW_A_Transfer( Instance, ( uint8_t * ) Operation->Context.ScreenPage, UTIL_SizeOf( Operation->Context.ScreenPage ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Transfer( LCDx, ( uint8_t * ) Operation->Context.ScreenPage, UTIL_SizeOf( Operation->Context.ScreenPage ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -2161,16 +2184,16 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushExecute( LCD_LM606
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushResolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushResolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Operation->Type != LCD_LM6063DCW_A_OperationType_Flush )
@@ -2188,7 +2211,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushResolve( LCD_LM606
             break;
         }
 
-        if ( ( Context->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
+        if ( ( Instance->Event & LCD_LM6063DCW_A_Event_SPI_Success ) == LCD_LM6063DCW_A_Event_SPI_Success )
         {
             Operation->Status = LCD_LM6063DCW_A_Status_Success;
             Operation->Handler = NULL;
@@ -2201,27 +2224,27 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushResolve( LCD_LM606
 }
 
 #if 0 // TODO Update and Support the following
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Process_PowerSaveEnter_Handler( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Process_PowerSaveEnter_Handler( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        if ( Instance->Context->Process.Type != LCD_LM6063DCW_A_ProcessType_PowerSaveEnter )
+        if ( Instance->Process.Type != LCD_LM6063DCW_A_ProcessType_PowerSaveEnter )
         {
-            LCD_Error( "Invalid Process Handler, Expected %d Found %d", LCD_LM6063DCW_A_ProcessType_PowerSaveEnter, Instance->Context->Process.Type );
+            LCD_Error( "Invalid Process Handler, Expected %d Found %d", LCD_LM6063DCW_A_ProcessType_PowerSaveEnter, Instance->Process.Type );
             LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_None );
             Status = LCD_LM6063DCW_A_Status_Error;
             break;
         }
-        switch ( Instance->Context->Operation.Type )
+        switch ( Instance->Operation.Type )
         {
             case LCD_LM6063DCW_A_OperationType_Pending:
-                Instance->Context->Operation.Status = LCD_LM6063DCW_A_SetDisplayOff_Execute( Instance );
+                Instance->Operation.Status = LCD_LM6063DCW_A_SetDisplayOff_Execute( Instance );
                 break;
             case LCD_LM6063DCW_A_OperationType_SetDisplayOff:
-                Instance->Context->Operation.Status = LCD_LM6063DCW_A_SetPixelsOn_Execute( Instance );
+                Instance->Operation.Status = LCD_LM6063DCW_A_SetPixelsOn_Execute( Instance );
                 break;
             case LCD_LM6063DCW_A_OperationType_SetPixelsOn:
             case LCD_LM6063DCW_A_OperationType_None:
@@ -2235,27 +2258,27 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Process_PowerSaveEnter_Handler( 
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Process_PowerSaveExit_Handler( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Process_PowerSaveExit_Handler( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        if ( Instance->Context->Process.Type != LCD_LM6063DCW_A_ProcessType_PowerSaveExit )
+        if ( Instance->Process.Type != LCD_LM6063DCW_A_ProcessType_PowerSaveExit )
         {
-            LCD_Error( "Invalid Process Handler, Expected %d Found %d", LCD_LM6063DCW_A_ProcessType_PowerSaveExit, Instance->Context->Process.Type );
+            LCD_Error( "Invalid Process Handler, Expected %d Found %d", LCD_LM6063DCW_A_ProcessType_PowerSaveExit, Instance->Process.Type );
             LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_None );
             Status = LCD_LM6063DCW_A_Status_Error;
             break;
         }
-        switch ( Instance->Context->Operation.Type )
+        switch ( Instance->Operation.Type )
         {
             case LCD_LM6063DCW_A_OperationType_Pending:
-                Instance->Context->Operation.Status = LCD_LM6063DCW_A_OperationPixelsOffExecute( Instance );
+                Instance->Operation.Status = LCD_LM6063DCW_A_OperationPixelsOffExecute( Instance );
                 break;
             case LCD_LM6063DCW_A_OperationType_SetPixelsOff:
-                Instance->Context->Operation.Status = LCD_LM6063DCW_A_SetDisplayOn_Execute( Instance );
+                Instance->Operation.Status = LCD_LM6063DCW_A_SetDisplayOn_Execute( Instance );
                 break;
             case LCD_LM6063DCW_A_OperationType_SetDisplayOn:
             case LCD_LM6063DCW_A_OperationType_None:
@@ -2269,25 +2292,25 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Process_PowerSaveExit_Handler( L
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff_Resolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff_Resolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        if ( Instance->Context->Operation.Type != LCD_LM6063DCW_A_OperationType_SetDisplayOff )
+        if ( Instance->Operation.Type != LCD_LM6063DCW_A_OperationType_SetDisplayOff )
         {
-            LCD_Error( "Invalid Operation Handler, Expected %d Found %d", LCD_LM6063DCW_A_OperationType_SetDisplayOff, Instance->Context->Operation.Type );
+            LCD_Error( "Invalid Operation Handler, Expected %d Found %d", LCD_LM6063DCW_A_OperationType_SetDisplayOff, Instance->Operation.Type );
             LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_None );
             Status = LCD_LM6063DCW_A_Status_Error;
-            Instance->Context->Operation.Status = Status;
+            Instance->Operation.Status = Status;
             break;
         }
         if ( ( Status = LCD_LM6063DCW_A_IsTimeout( Instance ) ) == LCD_LM6063DCW_A_Status_Success )
         {
-            Instance->Context->Operation.Handler = NULL;
-            Instance->Context->Operation.Status = LCD_LM6063DCW_A_Status_Success;
+            Instance->Operation.Handler = NULL;
+            Instance->Operation.Status = LCD_LM6063DCW_A_Status_Success;
         }
         Status = LCD_LM6063DCW_A_Status_Success;
     }
@@ -2295,12 +2318,12 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff_Resolve( LCD_LM606
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff_Execute( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff_Execute( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
         LCD_LM6063DCW_A_SetDisplay_t LCD_LM6063DCW_A_SetDisplay = { { LCD_LM6063DCW_A_Command_SetDisplay } };
         LCD_LM6063DCW_A_SetDisplay.State = 0;
@@ -2308,10 +2331,10 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff_Execute( LCD_LM606
         {
             break;
         }
-        Instance->Context->Operation.Type = LCD_LM6063DCW_A_OperationType_SetDisplayOff;
-        Instance->Context->Operation.Handler = LCD_LM6063DCW_A_SetDisplayOff_Resolve;
-        Instance->Context->Operation.Status = LCD_LM6063DCW_A_Status_Success;
-        Instance->Context->Operation.Timestamp = LCD_LM6063DCW_A_Context.Timestamp;
+        Instance->Operation.Type = LCD_LM6063DCW_A_OperationType_SetDisplayOff;
+        Instance->Operation.Handler = LCD_LM6063DCW_A_SetDisplayOff_Resolve;
+        Instance->Operation.Status = LCD_LM6063DCW_A_Status_Success;
+        Instance->Operation.Timestamp = LCD_LM6063DCW_A_Context.Timestamp;
         LCD_LM6063DCW_A_Delay( Instance, 100 ); // FIXME Set Appropriate Delay Value
         Status = LCD_LM6063DCW_A_Status_Success;
     }
@@ -2319,24 +2342,24 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff_Execute( LCD_LM606
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOn_Resolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOn_Resolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
-        if ( Instance->Context->Operation.Type != LCD_LM6063DCW_A_OperationType_SetPixelsOn )
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
+        if ( Instance->Operation.Type != LCD_LM6063DCW_A_OperationType_SetPixelsOn )
         {
-            LCD_Error( "Invalid Operation Handler, Expected %d Found %d", LCD_LM6063DCW_A_OperationType_SetPixelsOn, Instance->Context->Operation.Type );
+            LCD_Error( "Invalid Operation Handler, Expected %d Found %d", LCD_LM6063DCW_A_OperationType_SetPixelsOn, Instance->Operation.Type );
             LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_None );
             Status = LCD_LM6063DCW_A_Status_Error;
-            Instance->Context->Operation.Status = Status;
+            Instance->Operation.Status = Status;
             break;
         }
         if ( ( Status = LCD_LM6063DCW_A_IsTimeout( Instance ) ) == LCD_LM6063DCW_A_Status_Success )
         {
-            Instance->Context->Operation.Handler = NULL;
-            Instance->Context->Operation.Status = LCD_LM6063DCW_A_Status_Success;
+            Instance->Operation.Handler = NULL;
+            Instance->Operation.Status = LCD_LM6063DCW_A_Status_Success;
         }
         Status = LCD_LM6063DCW_A_Status_Success;
     }
@@ -2344,22 +2367,22 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOn_Resolve( LCD_LM6063D
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOn_Execute( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOn_Execute( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
         LCD_LM6063DCW_A_SetAllPixel_t LCD_LM6063DCW_A_SetAllPixel = { { LCD_LM6063DCW_A_Command_SetAllPixel } };
         LCD_LM6063DCW_A_SetAllPixel.On = 1;
         if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &LCD_LM6063DCW_A_SetAllPixel, UTIL_SizeOf( LCD_LM6063DCW_A_SetAllPixel ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
-        Instance->Context->Operation.Type = LCD_LM6063DCW_A_OperationType_SetPixelsOn;
-        Instance->Context->Operation.Handler = LCD_LM6063DCW_A_SetPixelsOn_Resolve;
-        Instance->Context->Operation.Status = LCD_LM6063DCW_A_Status_Success;
-        Instance->Context->Operation.Timestamp = LCD_LM6063DCW_A_Context.Timestamp;
+        Instance->Operation.Type = LCD_LM6063DCW_A_OperationType_SetPixelsOn;
+        Instance->Operation.Handler = LCD_LM6063DCW_A_SetPixelsOn_Resolve;
+        Instance->Operation.Status = LCD_LM6063DCW_A_Status_Success;
+        Instance->Operation.Timestamp = LCD_LM6063DCW_A_Context.Timestamp;
         LCD_LM6063DCW_A_Delay( Instance, 100 ); // FIXME Set Appropriate Delay Value
         Status = LCD_LM6063DCW_A_Status_Success;
     }
@@ -2367,19 +2390,19 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOn_Execute( LCD_LM6063D
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset_Resolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset_Resolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        if ( Instance->Context->Operation.Type != LCD_LM6063DCW_A_OperationType_Reset )
+        if ( Instance->Operation.Type != LCD_LM6063DCW_A_OperationType_Reset )
         {
-            LCD_Error( "Invalid Operation Handler, Expected %d Found %d", LCD_LM6063DCW_A_OperationType_Reset, Instance->Context->Operation.Type );
+            LCD_Error( "Invalid Operation Handler, Expected %d Found %d", LCD_LM6063DCW_A_OperationType_Reset, Instance->Operation.Type );
             LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_None );
             Status = LCD_LM6063DCW_A_Status_Error;
-            Instance->Context->Operation.Status = Status;
+            Instance->Operation.Status = Status;
             break;
         }
         if ( ( Status = LCD_LM6063DCW_A_IsTimeout( Instance ) ) == LCD_LM6063DCW_A_Status_Success )
@@ -2390,8 +2413,8 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset_Resolve( LCD_LM6063DCW_A_I
             {
                 Status = LCD_LM6063DCW_A_Status_Error;
             }
-            Instance->Context->Operation.Handler = NULL;
-            Instance->Context->Operation.Status = Status;
+            Instance->Operation.Handler = NULL;
+            Instance->Operation.Status = Status;
         }
         Status = LCD_LM6063DCW_A_Status_Success;
     }
@@ -2399,12 +2422,12 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset_Resolve( LCD_LM6063DCW_A_I
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset_Execute( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset_Execute( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
     LCD_LM6063DCW_A_Reset_t LCD_LM6063DCW_A_Reset = { { LCD_LM6063DCW_A_Command_Reset } };
@@ -2420,10 +2443,10 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset_Execute( LCD_LM6063DCW_A_I
             break;
         }
     #endif
-        Instance->Context->Operation.Type = LCD_LM6063DCW_A_OperationType_Reset;
-        Instance->Context->Operation.Handler = LCD_LM6063DCW_A_Reset_Resolve;
-        Instance->Context->Operation.Status = LCD_LM6063DCW_A_Status_Success;
-        Instance->Context->Operation.Timestamp = LCD_LM6063DCW_A_Context.Timestamp;
+        Instance->Operation.Type = LCD_LM6063DCW_A_OperationType_Reset;
+        Instance->Operation.Handler = LCD_LM6063DCW_A_Reset_Resolve;
+        Instance->Operation.Status = LCD_LM6063DCW_A_Status_Success;
+        Instance->Operation.Timestamp = LCD_LM6063DCW_A_Context.Timestamp;
         LCD_LM6063DCW_A_Delay( Instance, 100 ); // FIXME Set Appropriate Delay Value
         Status = LCD_LM6063DCW_A_Status_Success;
     }
@@ -2431,48 +2454,48 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset_Execute( LCD_LM6063DCW_A_I
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveEnter_Execute( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveEnter_Execute( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
         Status = LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_PowerSaveEnter );
     }
     while ( 0 );
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveExit_Execute( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveExit_Execute( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
         Status = LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_PowerSaveExit );
     }
     while ( 0 );
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP_Resolve( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP_Resolve( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
-        if ( Instance->Context->Operation.Type != LCD_LM6063DCW_A_OperationType_NOP )
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
+        if ( Instance->Operation.Type != LCD_LM6063DCW_A_OperationType_NOP )
         {
-            LCD_Error( "Invalid Operation Handler, Expected %d Found %d", LCD_LM6063DCW_A_OperationType_NOP, Instance->Context->Operation.Type );
+            LCD_Error( "Invalid Operation Handler, Expected %d Found %d", LCD_LM6063DCW_A_OperationType_NOP, Instance->Operation.Type );
             LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_None );
             Status = LCD_LM6063DCW_A_Status_Error;
-            Instance->Context->Operation.Status = Status;
+            Instance->Operation.Status = Status;
             break;
         }
         if ( ( Status = LCD_LM6063DCW_A_IsTimeout( Instance ) ) == LCD_LM6063DCW_A_Status_Success )
         {
-            Instance->Context->Operation.Handler = NULL;
-            Instance->Context->Operation.Status = LCD_LM6063DCW_A_Status_Success;
+            Instance->Operation.Handler = NULL;
+            Instance->Operation.Status = LCD_LM6063DCW_A_Status_Success;
         }
         Status = LCD_LM6063DCW_A_Status_Success;
     }
@@ -2480,21 +2503,21 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP_Resolve( LCD_LM6063DCW_A_Ins
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP_Execute( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP_Execute( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
         LCD_LM6063DCW_A_NOP_t LCD_LM6063DCW_A_NOP = { { LCD_LM6063DCW_A_Command_NOP } };
         if ( ( Status = LCD_LM6063DCW_A_Execute( Instance, ( uint8_t * ) &LCD_LM6063DCW_A_NOP, UTIL_SizeOf( LCD_LM6063DCW_A_NOP ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
-        Instance->Context->Operation.Type = LCD_LM6063DCW_A_OperationType_NOP;
-        Instance->Context->Operation.Handler = LCD_LM6063DCW_A_NOP_Resolve;
-        Instance->Context->Operation.Status = LCD_LM6063DCW_A_Status_Success;
-        Instance->Context->Operation.Timestamp = LCD_LM6063DCW_A_Context.Timestamp;
+        Instance->Operation.Type = LCD_LM6063DCW_A_OperationType_NOP;
+        Instance->Operation.Handler = LCD_LM6063DCW_A_NOP_Resolve;
+        Instance->Operation.Status = LCD_LM6063DCW_A_Status_Success;
+        Instance->Operation.Timestamp = LCD_LM6063DCW_A_Context.Timestamp;
         LCD_LM6063DCW_A_Delay( Instance, 100 ); // FIXME Set Appropriate Delay Value
         Status = LCD_LM6063DCW_A_Status_Success;
     }
@@ -2502,13 +2525,13 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP_Execute( LCD_LM6063DCW_A_Ins
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_IsIdle( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_IsIdle( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
-        if ( Instance->Context->Operation.Handler != NULL )
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
+        if ( Instance->Operation.Handler != NULL )
         {
             Status = LCD_LM6063DCW_A_Status_Busy;
             break;
@@ -2519,14 +2542,14 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_IsIdle( LCD_LM6063DCW_A_Instance
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_IsTimeout( LCD_LM6063DCW_A_Instance_t * Instance )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_IsTimeout( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
         TIM_Status_t TIM_Status = TIM_Status_Error;
-        if ( ( TIM_Status = TIM_IsExpiredTimestamp( LCD_TIM, &Instance->Context->Operation.Timestamp ) ) != TIM_Status_Success )
+        if ( ( TIM_Status = TIM_IsExpiredTimestamp( LCD_TIM, &Instance->Operation.Timestamp ) ) != TIM_Status_Success )
         {
             Status = LCD_LM6063DCW_A_Status_Busy;
             break;
@@ -2537,14 +2560,14 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_IsTimeout( LCD_LM6063DCW_A_Insta
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Delay( LCD_LM6063DCW_A_Instance_t * Instance, uint32_t time_ms )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Delay( LCD_LM6063DCW_A_t LCDx, uint32_t time_ms )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
         TIM_Status_t TIM_Status = TIM_Status_Error;
-        if ( ( TIM_Status = TIM_Timestamp_AddMillisecond( &Instance->Context->Operation.Timestamp, time_ms ) ) != TIM_Status_Success )
+        if ( ( TIM_Status = TIM_Timestamp_AddMillisecond( &Instance->Operation.Timestamp, time_ms ) ) != TIM_Status_Success )
         {
             Status = LCD_LM6063DCW_A_Status_Error;
             break;
@@ -2555,12 +2578,12 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Delay( LCD_LM6063DCW_A_Instance_
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Execute( LCD_LM6063DCW_A_Instance_t * Instance, uint8_t * buffer, uint32_t length )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Execute( LCD_LM6063DCW_A_t LCDx, uint8_t * buffer, uint32_t length )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
         GPIO_Status_t GPIO_Status = GPIO_Status_Error;
         if ( ( GPIO_Status = GPIO_Write( Instance->RegisterSelect, GPIO_Value_Low ) ) != GPIO_Status_Success )
         {
@@ -2585,12 +2608,12 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Execute( LCD_LM6063DCW_A_Instanc
 }
 
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetSize_Execute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Size_t * Size )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetSize_Execute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Size_t * Size )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p, Size=%p )", __FUNCTION__, Instance, Size );
+        LCD_Trace( "%s( LCDx=%d, Size=%p )", __FUNCTION__, LCDx, Size );
         if ( Size == NULL )
         {
             Status = LCD_LM6063DCW_A_Status_ArgumentInvalid;
@@ -2605,19 +2628,19 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetSize_Execute( LCD_LM6063DCW_A
     return Status;
 }
 
-static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetScreen_Execute( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Screen_t ** Screen )
+static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetScreen_Execute( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Screen_t ** Screen )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p, Screen=%p )", __FUNCTION__, Instance, Screen );
+        LCD_Trace( "%s( LCDx=%d, Screen=%p )", __FUNCTION__, LCDx, Screen );
         if ( Screen == NULL )
         {
             Status = LCD_LM6063DCW_A_Status_ArgumentInvalid;
             break;
         }
 
-        *Screen = &Instance->Context->Screen;
+        *Screen = &Instance->Screen;
         Status = LCD_LM6063DCW_A_Status_Success;
     }
     while ( 0 );
@@ -2629,45 +2652,67 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetScreen_Execute( LCD_LM6063DCW
 // #### Public Method(s) #######################################################
 // #############################################################################
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Initialize( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Bind( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Interface_t Interface )
+{
+    LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
+
+    do
+    {
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
+
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+
+        Instance->SPIx = Interface.SPIx;
+        Instance->ChipSelect = Interface.ChipSelect;
+        Instance->RegisterSelect = Interface.RegisterSelect;
+        Instance->Reset = Interface.Reset;
+        Instance->BacklightEnable = Interface.BacklightEnable;
+        Instance->PowerEnable = Interface.PowerEnable;
+    }
+    while ( 0 );
+
+    return Status;
+}
+
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Initialize( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
         if ( ( Status = LCD_LM6063DCW_A_Context_Initialize( ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
-        Status = LCD_LM6063DCW_A_Instance_Initialize( Instance );
+        Status = LCD_LM6063DCW_A_Instance_Initialize( LCDx );
     }
     while ( 0 );
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Cycle( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Cycle( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
         if ( ( Status = LCD_LM6063DCW_A_Context_Cycle( ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
-        Status = LCD_LM6063DCW_A_Instance_Cycle( Instance );
+        Status = LCD_LM6063DCW_A_Instance_Cycle( LCDx );
     }
     while ( 0 );
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_DeInitialize( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_DeInitialize( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Error;
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
-        if ( ( Status = LCD_LM6063DCW_A_Instance_DeInitialize( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
+        if ( ( Status = LCD_LM6063DCW_A_Instance_DeInitialize( LCDx ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -2677,16 +2722,16 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_DeInitialize( LCD_LM6063DCW_A_Instance_
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_IsReady( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_IsReady( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
         if ( Process->Type != LCD_LM6063DCW_A_ProcessType_None
@@ -2701,15 +2746,15 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_IsReady( LCD_LM6063DCW_A_Instance_t * I
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetSize( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Size_t * Size )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetSize( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Size_t * Size )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p, Size=%p )", __FUNCTION__, Instance, Size );
+        LCD_Trace( "%s( LCDx=%d, Size=%p )", __FUNCTION__, LCDx, Size );
 
-        if ( Instance == NULL || Size == NULL )
+        if ( Size == NULL )
         {
             Status = LCD_LM6063DCW_A_Status_ArgumentInvalid;
             break;
@@ -2723,13 +2768,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetSize( LCD_LM6063DCW_A_Instance_t * I
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetCursor( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Coordinate_t Coordinate )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetCursor( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Coordinate_t Coordinate )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p, Coordinate={Row=%d, Column=%d} )", __FUNCTION__, Instance, Coordinate.Row, Coordinate.Column );
+        LCD_Trace( "%s( LCDx=%d, Coordinate={Row=%d, Column=%d} )", __FUNCTION__, LCDx, Coordinate.Row, Coordinate.Column );
 
         // TODO Implement
         Status = LCD_LM6063DCW_A_Status_NotSupported;
@@ -2739,13 +2784,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetCursor( LCD_LM6063DCW_A_Instance_t *
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Write( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Character_t Character )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Write( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Character_t Character )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p, Character=%02X )", __FUNCTION__, Instance, Character );
+        LCD_Trace( "%s( LCDx=%d, Character=%02X )", __FUNCTION__, LCDx, Character );
 
         // TODO Implement
         Status = LCD_LM6063DCW_A_Status_NotSupported;
@@ -2755,16 +2800,15 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Write( LCD_LM6063DCW_A_Instance_t * Ins
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixel( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Coordinate_t Coordinate, LCD_LM6063DCW_A_Pixel_t Pixel )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixel( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Coordinate_t Coordinate, LCD_LM6063DCW_A_Pixel_t Pixel )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p, Coordinate={Row=%d, Column=%d}, Pixel=%02X )", __FUNCTION__, Instance, Coordinate.Row, Coordinate.Column, Pixel );
+        LCD_Trace( "%s( LCDx=%d, Coordinate={Row=%d, Column=%d}, Pixel=%02X )", __FUNCTION__, LCDx, Coordinate.Row, Coordinate.Column, Pixel );
 
-        if ( Instance == NULL
-             || Coordinate.Row < 0
+        if ( Coordinate.Row < 0
              || Coordinate.Row >= LCD_LM6063DCW_A_HEIGHT
              || Coordinate.Column < 0
              || Coordinate.Column >= LCD_LM6063DCW_A_WIDTH )
@@ -2773,58 +2817,60 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixel( LCD_LM6063DCW_A_Instance_t * 
             break;
         }
 
-        if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_IsReady( LCDx ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
 
-        LCD_LM6063DCW_A_InstanceContext_t * Context = &LCD_LM6063DCW_A_Context.Context[ Instance->LM6063DCW_A ];
-        LCD_LM6063DCW_A_Process_t * Process = &Context->Process;
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+        LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
-        Context->Screen[ Coordinate.Row ][ Coordinate.Column ] = Pixel;
+        Instance->Screen[ Coordinate.Row ][ Coordinate.Column ] = Pixel;
     }
     while ( 0 );
 
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetScreen( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Screen_t ** Screen )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetScreen( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Screen_t ** Screen )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p, Screen=%p )", __FUNCTION__, Instance, Screen );
+        LCD_Trace( "%s( LCDx=%d, Screen=%p )", __FUNCTION__, LCDx, Screen );
 
-        if ( Instance == NULL || Screen == NULL )
+        if ( Screen == NULL )
         {
             Status = LCD_LM6063DCW_A_Status_ArgumentInvalid;
             break;
         }
 
+        LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
+
         // FIXME Do we need to copy it here instead of reference it ?
-        *Screen = &Instance->Context->Screen;
+        *Screen = &Instance->Screen;
     }
     while ( 0 );
 
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Flush( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Flush( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
-        if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_IsReady( LCDx ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
 
-        Status = LCD_LM6063DCW_A_SetProcess( Instance, LCD_LM6063DCW_A_ProcessType_Flush );
+        Status = LCD_LM6063DCW_A_SetProcess( LCDx, LCD_LM6063DCW_A_ProcessType_Flush );
     }
     while ( 0 );
 
@@ -2832,13 +2878,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Flush( LCD_LM6063DCW_A_Instance_t * Ins
 }
 
 #if 0 // TODO Update and Support the following
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOn( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOn( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -2859,13 +2905,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOn( LCD_LM6063DCW_A_Instance_
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -2886,13 +2932,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff( LCD_LM6063DCW_A_Instance
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetLine( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Line_t Line )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetLine( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Line_t Line )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -2913,13 +2959,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetLine( LCD_LM6063DCW_A_Instance_t * I
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPage( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Page_t Page )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPage( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Page_t Page )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -2940,13 +2986,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPage( LCD_LM6063DCW_A_Instance_t * I
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetColumn( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Column_t Column )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetColumn( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Column_t Column )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -2967,13 +3013,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetColumn( LCD_LM6063DCW_A_Instance_t *
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetSEG_Direction( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_SEG_Direction_t SEG_Direction )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetSEG_Direction( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_SEG_Direction_t SEG_Direction )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -2994,13 +3040,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetSEG_Direction( LCD_LM6063DCW_A_Insta
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayDirection( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_DisplayDirection_t DisplayDirection )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayDirection( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_DisplayDirection_t DisplayDirection )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3021,13 +3067,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayDirection( LCD_LM6063DCW_A_In
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOn( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOn( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3048,13 +3094,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOn( LCD_LM6063DCW_A_Instance_t
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOff( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOff( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3075,13 +3121,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOff( LCD_LM6063DCW_A_Instance_
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetBias( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_Bias_t Bias )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetBias( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Bias_t Bias )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3102,13 +3148,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetBias( LCD_LM6063DCW_A_Instance_t * I
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3129,13 +3175,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset( LCD_LM6063DCW_A_Instance_t * Ins
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetCOM_Direction( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_COM_Direction_t COM_Direction )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetCOM_Direction( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_COM_Direction_t COM_Direction )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3156,13 +3202,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetCOM_Direction( LCD_LM6063DCW_A_Insta
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPower( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_PowerBooster_t PowerBooster, LCD_LM6063DCW_A_PowerRegulator_t PowerRegulator, LCD_LM6063DCW_A_PowerFollower_t PowerFollower )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPower( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_PowerBooster_t PowerBooster, LCD_LM6063DCW_A_PowerRegulator_t PowerRegulator, LCD_LM6063DCW_A_PowerFollower_t PowerFollower )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3183,13 +3229,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPower( LCD_LM6063DCW_A_Instance_t * 
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetRegulationRatio( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_RegulationRatio_t RegulationRatio )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetRegulationRatio( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_RegulationRatio_t RegulationRatio )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3210,13 +3256,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetRegulationRatio( LCD_LM6063DCW_A_Ins
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetElectronicVolume( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_ElectronicVolume_t ElectronicVolume )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetElectronicVolume( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_ElectronicVolume_t ElectronicVolume )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3237,13 +3283,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetElectronicVolume( LCD_LM6063DCW_A_In
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetBoosterLevel( LCD_LM6063DCW_A_Instance_t * Instance, LCD_LM6063DCW_A_BoosterLevel_t BoosterLevel )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetBoosterLevel( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_BoosterLevel_t BoosterLevel )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3264,13 +3310,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetBoosterLevel( LCD_LM6063DCW_A_Instan
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveEnter( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveEnter( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3291,13 +3337,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveEnter( LCD_LM6063DCW_A_Instanc
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveExit( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveExit( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3318,13 +3364,13 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveExit( LCD_LM6063DCW_A_Instance
     return Status;
 }
 
-LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP( LCD_LM6063DCW_A_Instance_t * Instance )
+LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP( LCD_LM6063DCW_A_t LCDx )
 {
     LCD_LM6063DCW_A_Status_t Status = LCD_LM6063DCW_A_Status_Success;
 
     do
     {
-        LCD_Trace( "%s( Instance=%p )", __FUNCTION__, Instance );
+        LCD_Trace( "%s( LCDx=%d )", __FUNCTION__, LCDx );
 
     #if 0
         if ( ( Status = LCD_LM6063DCW_A_IsReady( Instance ) ) != LCD_LM6063DCW_A_Status_Success )
@@ -3350,7 +3396,7 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP( LCD_LM6063DCW_A_Instance_t * Insta
 // #### Public Variable(s) #####################################################
 // #############################################################################
 
-const char LCD_LM6063DCW_A_VERSION[] = "0.0.0.v20260913-1832";
+const char LCD_LM6063DCW_A_VERSION[] = "0.0.0.v20261004-1542";
 
 // #############################################################################
 // #### File Guard #############################################################

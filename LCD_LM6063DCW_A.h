@@ -438,64 +438,72 @@ extern "C"
 
     typedef LCD_LM6063DCW_A_Pixel_t LCD_LM6063DCW_A_Screen_t[ LCD_LM6063DCW_A_HEIGHT ][ LCD_LM6063DCW_A_WIDTH ];
 
-    typedef struct LCD_LM6063DCW_A_InstanceContext LCD_LM6063DCW_A_InstanceContext_t;
-
-    typedef struct LCD_LM6063DCW_A_Instance
+    /**
+     *  @brief LCD LM6063DCW_A Interface
+     *
+     *  @struct LCD_LM6063DCW_A_Interface_t
+     */
+    typedef struct LCD_LM6063DCW_A_Interface
     {
-        LCD_LM6063DCW_A_t LM6063DCW_A; // FIXME
-
-        SPI_t SPIx;
-        GPIO_t ChipSelect;
-        GPIO_t RegisterSelect;
-        GPIO_t Reset;
-        GPIO_t PowerEnable;
-        GPIO_t BacklightEnable;
-
-        // Managed internally !
-        LCD_LM6063DCW_A_InstanceContext_t * Context;
-    } LCD_LM6063DCW_A_Instance_t;
+        SPI_t SPIx;             ///<
+        GPIO_t ChipSelect;      ///<
+        GPIO_t RegisterSelect;  ///<
+        GPIO_t Reset;           ///<
+        GPIO_t BacklightEnable; ///<
+        GPIO_t PowerEnable;     ///<
+    } LCD_LM6063DCW_A_Interface_t;
 
     // #############################################################################
     // #### Public Method(s) #######################################################
     // #############################################################################
 
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Initialize( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Cycle( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_DeInitialize( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
+    /**
+     *  @brief Binds Instance of LCD LM6063DCW_A to interface
+     *
+     *  @param[in] LCDx      Instance
+     *  @param[in] Interface Connection Interface
+     *
+     *  @return LCD_LM6063DCW_A_Status_t
+     */
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Bind( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Interface_t Interface );
 
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_IsReady( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Initialize( LCD_LM6063DCW_A_t LCDx );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Cycle( LCD_LM6063DCW_A_t LCDx );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_DeInitialize( LCD_LM6063DCW_A_t LCDx );
 
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetSize( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_Size_t * LCD_LM6063DCW_A_Size );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_IsReady( LCD_LM6063DCW_A_t LCDx );
 
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetCursor( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_Coordinate_t LCD_LM6063DCW_A_Coordinate );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetSize( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Size_t * LCD_LM6063DCW_A_Size );
 
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Write( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_Character_t LCD_LM6063DCW_A_Character );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetCursor( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Coordinate_t LCD_LM6063DCW_A_Coordinate );
 
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixel( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_Coordinate_t LCD_LM6063DCW_A_Coordinate, LCD_LM6063DCW_A_Pixel_t LCD_LM6063DCW_A_Pixel );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Write( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Character_t LCD_LM6063DCW_A_Character );
 
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetScreen( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_Screen_t ** LCD_LM6063DCW_A_Screen );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixel( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Coordinate_t LCD_LM6063DCW_A_Coordinate, LCD_LM6063DCW_A_Pixel_t LCD_LM6063DCW_A_Pixel );
 
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Flush( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetScreen( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Screen_t ** LCD_LM6063DCW_A_Screen );
 
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOn( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetLine( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_Line_t LCD_LM6063DCW_A_Line );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPage( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_Page_t LCD_LM6063DCW_A_Page );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetColumn( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_Column_t LCD_LM6063DCW_A_Column );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetSEGDirection( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_SEG_Direction_t LCD_LM6063DCW_A_SEG_Direction );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayDirection( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_DisplayDirection_t LCD_LM6063DCW_A_DisplayDirection );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOn( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOff( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetBias( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_Bias_t LCD_LM6063DCW_A_Bias );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetCOMDirection( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_COM_Direction_t LCD_LM6063DCW_A_COM_Direction );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPower( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_PowerBooster_t LCD_LM6063DCW_A_PowerBooster, LCD_LM6063DCW_A_PowerRegulator_t LCD_LM6063DCW_A_PowerRegulator, LCD_LM6063DCW_A_PowerFollower_t LCD_LM6063DCW_A_PowerFollower );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetRegulationRatio( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_RegulationRatio_t LCD_LM6063DCW_A_RegulationRatio );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetElectronicVolume( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_ElectronicVolume_t LCD_LM6063DCW_A_ElectronicVolume );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetBoosterLevel( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance, LCD_LM6063DCW_A_BoosterLevel_t LCD_LM6063DCW_A_BoosterLevel );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveEnter( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveExit( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
-    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP( LCD_LM6063DCW_A_Instance_t * LCD_LM6063DCW_A_Instance );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Flush( LCD_LM6063DCW_A_t LCDx );
+
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOn( LCD_LM6063DCW_A_t LCDx );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayOff( LCD_LM6063DCW_A_t LCDx );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetLine( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Line_t LCD_LM6063DCW_A_Line );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPage( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Page_t LCD_LM6063DCW_A_Page );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetColumn( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Column_t LCD_LM6063DCW_A_Column );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetSEGDirection( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_SEG_Direction_t LCD_LM6063DCW_A_SEG_Direction );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetDisplayDirection( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_DisplayDirection_t LCD_LM6063DCW_A_DisplayDirection );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOn( LCD_LM6063DCW_A_t LCDx );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixelsOff( LCD_LM6063DCW_A_t LCDx );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetBias( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_Bias_t LCD_LM6063DCW_A_Bias );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_Reset( LCD_LM6063DCW_A_t LCDx );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetCOMDirection( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_COM_Direction_t LCD_LM6063DCW_A_COM_Direction );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPower( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_PowerBooster_t LCD_LM6063DCW_A_PowerBooster, LCD_LM6063DCW_A_PowerRegulator_t LCD_LM6063DCW_A_PowerRegulator, LCD_LM6063DCW_A_PowerFollower_t LCD_LM6063DCW_A_PowerFollower );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetRegulationRatio( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_RegulationRatio_t LCD_LM6063DCW_A_RegulationRatio );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetElectronicVolume( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_ElectronicVolume_t LCD_LM6063DCW_A_ElectronicVolume );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetBoosterLevel( LCD_LM6063DCW_A_t LCDx, LCD_LM6063DCW_A_BoosterLevel_t LCD_LM6063DCW_A_BoosterLevel );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveEnter( LCD_LM6063DCW_A_t LCDx );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_PowerSaveExit( LCD_LM6063DCW_A_t LCDx );
+    LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP( LCD_LM6063DCW_A_t LCDx );
 
     // TODO Extended Commands
 
