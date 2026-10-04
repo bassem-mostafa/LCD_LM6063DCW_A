@@ -297,7 +297,6 @@ typedef LCD_LM6063DCW_A_Status_t ( *LCD_LM6063DCW_A_OperationHandler_t )( LCD_LM
 typedef struct LCD_LM6063DCW_A_OperationContext
 {
     LCD_LM6063DCW_A_Page_t Page;
-    uint8_t ScreenPage[ LCD_LM6063DCW_A_WIDTH ]; // FIXME Could it be replaced by using context screen directly ?
 
     union
     {
@@ -393,7 +392,7 @@ typedef struct LCD_LM6063DCW_A_Instance
     LCD_LM6063DCW_A_Process_t Process;
 
     LCD_LM6063DCW_A_SEG_Direction_t SEG_Direction;
-    LCD_LM6063DCW_A_Screen_t Screen;
+    LCD_LM6063DCW_A_Pixel_t Screen[ LCD_LM6063DCW_A_HEIGHT / 8 /* Pixels Per Page */ ][ LCD_LM6063DCW_A_WIDTH ];
 } LCD_LM6063DCW_A_Instance_t;
 
 typedef struct LCD_LM6063DCW_A_Context
@@ -997,6 +996,9 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_ProcessFlush( LCD_LM6063DCW_A_t 
                     Operation->Status = LCD_LM6063DCW_A_OperationPageExecute( LCDx, Operation->Context.Page );
                     break;
                 }
+
+                // FIXME Clear Screen After Flushing it
+                UTIL_MemorySetZero( Instance->Screen, UTIL_SizeOf( Instance->Screen ) );
 
                 Operation->Context.Page = LCD_LM6063DCW_A_Page_0;
                 // no break
@@ -2153,16 +2155,7 @@ static LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_OperationFlushExecute( LCD_LM606
         LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
-        for ( uint32_t column = 0; column < LCD_LM6063DCW_A_WIDTH; ++column )
-        {
-            Operation->Context.ScreenPage[ column ] = 0x00;
-            for ( uint32_t line = 0; line < 8; ++line )
-            {
-                Operation->Context.ScreenPage[ column ] |= Instance->Screen[ Page * 8 + line ][ column ] << line;
-            }
-        }
-
-        if ( ( Status = LCD_LM6063DCW_A_Transfer( LCDx, ( uint8_t * ) Operation->Context.ScreenPage, UTIL_SizeOf( Operation->Context.ScreenPage ) ) ) != LCD_LM6063DCW_A_Status_Success )
+        if ( ( Status = LCD_LM6063DCW_A_Transfer( LCDx, ( uint8_t * ) Instance->Screen[ Page ], UTIL_SizeOf( Instance->Screen[ Page ] ) ) ) != LCD_LM6063DCW_A_Status_Success )
         {
             break;
         }
@@ -2826,7 +2819,14 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_SetPixel( LCD_LM6063DCW_A_t LCDx, LCD_L
         LCD_LM6063DCW_A_Process_t * Process = &Instance->Process;
         LCD_LM6063DCW_A_Operation_t * Operation = &Process->Context.Operation;
 
-        Instance->Screen[ Coordinate.Row ][ Coordinate.Column ] = Pixel;
+        if ( Pixel )
+        {
+            Instance->Screen[ Coordinate.Row / 8 ][ Coordinate.Column ] |= Pixel << ( Coordinate.Row % 8 );
+        }
+        else
+        {
+            Instance->Screen[ Coordinate.Row / 8 ][ Coordinate.Column ] &= ~( Pixel << ( Coordinate.Row % 8 ) );
+        }
     }
     while ( 0 );
 
@@ -2850,7 +2850,9 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_GetScreen( LCD_LM6063DCW_A_t LCDx, LCD_
         LCD_LM6063DCW_A_Instance_t * Instance = &LCD_LM6063DCW_A_Context.Instance[ LCDx ];
 
         // FIXME Do we need to copy it here instead of reference it ?
-        *Screen = &Instance->Screen;
+        // *Screen = &Instance->Screen;
+
+        Status = LCD_LM6063DCW_A_Status_NotSupported;
     }
     while ( 0 );
 
@@ -3396,7 +3398,7 @@ LCD_LM6063DCW_A_Status_t LCD_LM6063DCW_A_NOP( LCD_LM6063DCW_A_t LCDx )
 // #### Public Variable(s) #####################################################
 // #############################################################################
 
-const char LCD_LM6063DCW_A_VERSION[] = "0.0.0.v20261004-1542";
+const char LCD_LM6063DCW_A_VERSION[] = "0.0.0.v20261005-0134";
 
 // #############################################################################
 // #### File Guard #############################################################
